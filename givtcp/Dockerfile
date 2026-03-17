@@ -1,47 +1,42 @@
-# set base image (host OS)
-FROM python:3.11-rc-alpine
-#FROM python:alpine3.15
+FROM python:3.11-alpine
 
-RUN apk add mosquitto
-RUN apk add --update npm
-RUN apk add git
-RUN apk add tzdata
-RUN apk add musl-utils
-RUN apk add xsel
-RUN apk add redis
+RUN apk add --update --no-cache mosquitto npm git tzdata musl-utils redis nginx \
+    && mkdir -p /run/nginx
 
-RUN apk add nginx && mkdir -p /run/nginx
 RUN npm install -g serve
 
-# set the working directory in the container
 WORKDIR /app
 
-# copy the dependencies file to the working directory
-COPY requirements.txt .
+# Pull all source files from giv_tcp repo, stripping any HA addon config files
+RUN git clone https://github.com/lucus30/giv_tcp.git /tmp/giv_tcp \
+    && find /tmp/giv_tcp -name "config.yaml" -delete \
+    && find /tmp/giv_tcp -name "repository.yaml" -delete
+
+# Copy everything into place
+RUN cp /tmp/giv_tcp/requirements.txt . \
+    && cp -r /tmp/giv_tcp/GivTCP ./GivTCP \
+    && cp -r /tmp/giv_tcp/WebDashboard ./WebDashboard \
+    && cp -r /tmp/giv_tcp/givtcp-vuejs ./givtcp-vuejs \
+    && cp -r /tmp/giv_tcp/ingress ./ingress \
+    && cp /tmp/giv_tcp/ingress.conf /etc/nginx/http.d/ \
+    && cp /tmp/giv_tcp/ingress_no_ssl.conf . \
+    && cp /tmp/giv_tcp/api.json ./GivTCP/api.json \
+    && cp /tmp/giv_tcp/redis.conf . \
+    && cp /tmp/giv_tcp/settings.json . \
+    && cp /tmp/giv_tcp/startup.py startup.py \
+    && rm -rf /tmp/giv_tcp
+
 RUN pip install -r requirements.txt
 
-COPY givtcp-vuejs/package.json /app/ingress/package.json
+# Build the Vue.js frontend
+RUN cd /app/givtcp-vuejs && npm install
+RUN cd /app/givtcp-vuejs && npm run build \
+    && mv dist/index.html dist/config.html \
+    && cp -a dist/. /app/ingress/
 
-RUN cd /app/ingress && npm install
-COPY givtcp-vuejs ./ingress
-RUN cd /app/ingress && npm run build && mv dist/index.html dist/config.html && cp -a dist/. /app/ingress/
+RUN cp -r /app/GivTCP/givenergy_modbus_async/ /usr/local/lib/python3.11/site-packages/givenergy_modbus_async
 
-COPY ingress.conf /etc/nginx/http.d/
-COPY ingress_no_ssl.conf /app/ingress_no_ssl.conf
 RUN rm /etc/nginx/http.d/default.conf
 
-# copy the content of the local src directory to the working directory
-COPY GivTCP/ ./GivTCP
-COPY WebDashboard ./WebDashboard
-# COPY givenergy_modbus/ /usr/local/lib/python3.11/site-packages/givenergy_modbus
-COPY GivTCP/givenergy_modbus_async/ /usr/local/lib/python3.11/site-packages/givenergy_modbus_async
-
-COPY api.json ./GivTCP/api.json
-COPY startup_2.py startup.py
-COPY redis.conf redis.conf
-COPY settings.json ./settings.json
-COPY ingress/ ./ingress
-
 EXPOSE 1883 6379 8099
-
 CMD ["python3", "/app/startup.py"]

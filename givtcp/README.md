@@ -1,3 +1,6 @@
+THIS IS A LUCUS30 TEST
+-------------
+
 # GivTCP v3
  Version 3 of GivTCP will allow connection to the following GivEnergy Devices:
  - Hybrid inverter
